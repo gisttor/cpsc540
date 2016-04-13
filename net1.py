@@ -2,35 +2,47 @@ from __future__ import print_function
 import numpy as np
 np.random.seed(1337)  # for reproducibility
 
-from keras.datasets import mnist
 from keras.models import Sequential
-from keras.layers.core import Dense, Dropout, Activation, Flatten
+from keras.layers.core import Dense, Dropout, Activation, Flatten, Reshape
 from keras.layers.convolutional import Convolution2D, MaxPooling2D
 from keras.preprocessing.image import ImageDataGenerator
 from keras.utils import np_utils
 import read_data
 
 def main():
+    image_model = train_image_model()
+
+def train_biz_model(image_model):
+    # need pic -> biz mapping
+    # for each biz, find pic
+
+    # train data: vector size 9, number of images that predict that label
+    pass 
+
+def train_image_model():
     batch_size = 128
     nb_classes = 9
     nb_epoch = 3
-    dropout = 0.7
+    dropout = 0.2
 
     # input image dimensions
-    img_size = 150
+    img_size = 200
+    num_biz = 100
     # number of convolutional filters to use
-    nb_filters = 40
+    nb_filters = 30
     # size of pooling area for max pooling
     nb_pool = 10 
     # convolution kernel size
-    nb_conv = 9
+    nb_conv = 4
 
     # the data, shuffled and split between train and test sets
     (X_train, Y_train, X_test, Y_test) = \
-        read_data.read_data_photo_labels(img_size = img_size, num_biz = 150, fromfile = True)
+        read_data.read_data_photo_labels(img_size = img_size, num_biz = num_biz)
 
     print('X_train shape:', X_train.shape)
     print('Y_train shape:', Y_train.shape)
+    print('Training on %s images, testing on %s images' % \
+            (X_train.shape[0], X_test.shape[0]))
 
   # datagen = ImageDataGenerator(
   #     featurewise_center=False,
@@ -49,13 +61,19 @@ def main():
                             input_shape=(3, img_size, img_size)))
     model.add(Activation('relu'))
 
-    model.add(MaxPooling2D(pool_size=(4,4)))
-    model.add(Convolution2D(nb_filters, nb_conv, nb_conv))
+  # model.add(MaxPooling2D(pool_size=(3,3)))
+  # model.add(Convolution2D(nb_filters, nb_conv, nb_conv))
+  # model.add(Activation('relu'))
+
+    model.add(Flatten())
+    model.add(Dropout(dropout))
+    model.add(Dense(900))
     model.add(Activation('relu'))
 
-    #model.add(MaxPooling2D(pool_size=(1, 1)))
-    #model.add(Convolution2D(nb_filters, nb_conv, nb_conv))
-    #model.add(Activation('relu'))
+    model.add(Reshape((1, 30, 30)))
+    model.add(MaxPooling2D(pool_size=(3, 3)))
+    model.add(Convolution2D(nb_filters, nb_conv, nb_conv))
+    model.add(Activation('relu'))
 
     model.add(Flatten())
     model.add(Dropout(dropout))
@@ -83,12 +101,13 @@ def main():
  #          samples_per_epoch=18226, nb_epoch=nb_epoch, verbose=1)
     test_pred = np.sign(model.predict(X_test))
     test_loss = model.evaluate(X_test, Y_test)
+    np.savetxt('pred.csv', test_pred, delimiter=',')
 
     print('Test loss: ', test_loss)
     print('Test accuracy: ', accuracy(test_pred, Y_test))
     print('F1 score: ', f1score(test_pred, Y_test))
 
-    # next: based on the photo predictions, what are the biz labels?
+    return model
 
 def accuracy(y_pred, y_test):
     total = y_test.size
