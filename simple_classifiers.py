@@ -4,11 +4,28 @@ import sys
 np.random.seed(1337)  # for reproducibility
 
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import LinearSVC
 import json
 import score
 import read_data
 
 def main():
+    x_train, y_train, x_test, y_test = load_features()
+    x_train_conc = concate_x(x_train)
+    x_test_conc = concate_x(x_test)
+
+    y_hat = svm(x_train_conc, y_train, x_test_conc)
+    # y_hat = random_forests(x_train_conc, y_train, x_test_conc)
+
+    # np.savetxt('pred.csv', y_hat, delimiter=',')
+    print('Test accuracy: ', score.accuracy(y_hat, y_test))
+    print('F1 score: ', score.f1score(y_hat, y_test))
+    print('F1 score by class:')
+    score_byclass = score.f1_by_class(y_hat, y_test)
+    for c, class_score in enumerate(score_byclass):
+        print(c, ':', class_score)
+
+def load_features():
     # this is just copy pasted from net2.py
 
     # image_labels: shape (num_image, 3, 1000)
@@ -37,19 +54,14 @@ def main():
     print('Training on %s biz, testing on %s biz' % \
             (x_train.shape[0], x_test.shape[0]))
 
+    return x_train, y_train, x_test, y_test
 
-    # this is where the random forest part starts
-    # in this program we train a random forest for each label
-    # and predict independantly
-
-    y_pred = []
+def random_forests(x_train, y_train, x_test):
+    '''Fit random forests to each label class and predict independantly'''
+    y_hat = []
     num_classes = len(y_train[1, :])
     for i in range(num_classes):
         print("creating classifier:", i)
-        # just combine all the x_trains (GoogLeNet uses 3 classifiers)
-        x_train_conc = np.concatenate((x_train[:,0,:], x_train[:,1,:]), axis=1)
-        x_train_conc = np.concatenate((x_train_conc, x_train[:,2,:]), axis=1)
-        
         random_forest = RandomForestClassifier(
             n_estimators=300,
             max_depth=None,
@@ -57,28 +69,36 @@ def main():
             oob_score=True,
             verbose=1,
             criterion="entropy")
-
         print("fitting classifier:", i)
-        random_forest.fit(x_train_conc, y_train[:,i])
-
+        random_forest.fit(x_train, y_train[:,i])
         print("getting predictions for attribute:", i)
-        x_test_conc = np.concatenate((x_test[:,0,:], x_test[:,1,:]), axis=1)
-        x_test_conc = np.concatenate((x_test_conc, x_test[:,2,:]), axis=1)
-        y_pred.append(random_forest.predict(x_test_conc))
+        y_hat.append(random_forest.predict(x_test))
 
     print("preparing output...")
-    y_pred = np.vstack(y_pred)
-    y_pred = np.transpose(y_pred)
+    y_hat = np.vstack(y_hat)
+    y_hat = np.transpose(y_hat)
+    return y_hat
 
-    # np.savetxt('pred.csv', y_pred, delimiter=',')
+def svm(x_train, y_train, x_test):
+    '''Fit linear SVMs to each label class and predict independantly'''
+    y_hat = []
+    num_classes = len(y_train[1, :])
+    for i in range(num_classes):
+        print("creating classifier:", i)
+        clf = LinearSVC(verbose=1)
+        print("fitting classifier:", i)
+        clf.fit(x_train, y_train[:,i])
+        print("getting predictions for attribute:", i)
+        y_hat.append(clf.predict(x_test))
+    
+    y_hat = np.vstack(y_hat)
+    y_hat = np.transpose(y_hat)
+    return y_hat
 
-    print('Test accuracy: ', score.accuracy(y_pred, y_test))
-    print('F1 score: ', score.f1score(y_pred, y_test))
-    print('F1 score by class:')
-    score_byclass = score.f1_by_class(y_pred, y_test)
-    for c, class_score in enumerate(score_byclass):
-        print(c, ':', class_score)
-
+def concate_x(X):
+    # just combine all the Xs (GoogLeNet uses 3 classifiers)
+    X_conc = np.concatenate((X[:,0,:], X[:,1,:]), axis=1)
+    return np.concatenate((X_conc, X[:,2,:]), axis=1)
 
 if __name__ == '__main__':
     main()
