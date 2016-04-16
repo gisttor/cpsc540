@@ -12,3 +12,9 @@ def f1score(y_pred, y_test):
     precision = tp/(tp + fp)
     recall = tp/(tp + fn)
     return 2*precision*recall/(precision + recall)
+
+def f1_by_class(y_pred, y_test):
+    score = []
+    for i in range(y_pred.shape[1]):
+        score.append(f1score(y_pred[:,i], y_test[:,i]))
+    return score

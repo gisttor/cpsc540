@@ -17,7 +17,7 @@ if __name__ == '__main__':
     dropout = 0.5
     batch_size = 64
     nb_classes = 9
-    nb_epoch = 200
+    nb_epoch = 40
 
     model = Sequential()
 
@@ -33,7 +33,7 @@ if __name__ == '__main__':
 
     model.add(Dense(nb_classes))
 
-    model.compile(loss='hinge', optimizer='adadelta')
+    model.compile(loss='hinge', optimizer='adam')
 
     # image_labels: shape (num_image, 3, 1000)
     image_labels = np.load('data/googlenet_predictions.npy')
@@ -62,7 +62,7 @@ if __name__ == '__main__':
             (x_train.shape[0], x_test.shape[0]))
 
     model.fit(x_train, y_train, batch_size=batch_size,
-            nb_epoch=nb_epoch, verbose=1, validation_split=0.1)
+            nb_epoch=nb_epoch, verbose=1, validation_split=0.0)
 
     test_pred = np.sign(model.predict(x_test))
     test_loss = model.evaluate(x_test, y_test)
@@ -71,3 +71,7 @@ if __name__ == '__main__':
     print('Test loss: ', test_loss)
     print('Test accuracy: ', score.accuracy(test_pred, y_test))
     print('F1 score: ', score.f1score(test_pred, y_test))
+    print('F1 score by class:')
+    score_byclass = score.f1_by_class(test_pred, y_test)
+    for c, score in enumerate(score_byclass):
+        print(c, ':', score)
