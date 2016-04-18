@@ -76,28 +76,19 @@ def get_compressed_photos(num_biz, img_size, biz_info = None,
     # reason
     # copy on write mechanics?
     print('Reading photos')
-    x = np.ones((num_image, 3, img_size, img_size), dtype=np.float16)
     img_ids = np.ones((num_image, 2))
     order = np.random.permutation(num_image)
     biz_count = 0;
     img_count = 0;
-    if with_progbar:
-        progbar = Progbar(num_image)
     for biz_id in biz_order:
         for photo_id in biz_info[biz_id][1]:
-            im_raw = image.load_img('data/train_photos/%s.jpg' % photo_id)
-            im_raw = im_raw.resize((img_size, img_size), PIL.Image.ANTIALIAS)
             index = order[img_count]
-            x[index] = image.img_to_array(im_raw)
             img_ids[index] = [biz_id, photo_id]
-
             img_count += 1
-            if with_progbar:
-                progbar.add(1)
         biz_count += 1
         if biz_count >= num_biz:
             break
-
+    x = read_images(img_size, img_ids[:,1], with_progbar)
     x /= 255;
     if use_cache:
         x_name, img_id_name = get_cache_name(img_size, num_biz)
@@ -105,9 +96,23 @@ def get_compressed_photos(num_biz, img_size, biz_info = None,
         np.save(img_id_name, img_ids)
     return x, img_ids
 
-def read_data_photo_labels(
-        num_biz = 100, img_size = 150, num_labels = 9, test_split = 0.2, 
-        stream = False, batch_size = 32):
+def read_images(img_size, img_list, with_progbar=True):
+    num_image = len(img_list)
+    if with_progbar:
+        progbar = Progbar(num_image)
+
+    x = np.ones((num_image, 3, img_size, img_size), dtype=np.float16)
+    for i, photo_id in enumerate(img_list):
+        im_raw = image.load_img('data/train_photos/%d.jpg' % photo_id)
+        im_raw = im_raw.resize((img_size, img_size), PIL.Image.NEAREST)
+        x[i] = image.img_to_array(im_raw)
+
+        if with_progbar:
+            progbar.add(1)
+    return x
+
+def read_data_photo_labels(test_size,
+        img_size = 150, num_labels = 9, test_split = 0.2, batch_size = 32):
     ''' Read data, pushing labels down to photos
 
     if stream is True, num_biz will be the chunck size, and the first yeild
@@ -120,39 +125,29 @@ def read_data_photo_labels(
     '''
 
     biz_info = read_biz_csv(num_labels)
-    x, img_ids = get_compressed_photos(num_biz, img_size, biz_info, 
-                                       use_cache = not stream)
-    y = img_id_to_labels(img_ids, num_labels, biz_info)
-    # get labels and split into test and train
-    n = x.shape[0]
+    photo_dict = {}
+    # turn into photo_id -> (biz_id, label)
+    for biz_id, (labels, photo_list) in biz_info.items():
+        for p in photo_list:
+            photo_dict[p] = (biz_id, labels)
 
-    split_idx = int(n*(1-test_split))
-    x_train, x_test = np.vsplit(x, [split_idx])
-    y_train, y_test = np.vsplit(y, [split_idx])
-    if stream:
-        pool = ThreadPool(processes=1)
-        yield x_test, y_test
-        while True:
-            future_res = pool.apply_async(get_compressed_photos,
-                    (num_biz, img_size, biz_info), {'use_cache': False, 'with_progbar': False})
-            split_idx = range(batch_size, x_train.shape[0], batch_size)
-            split_x = np.vsplit(x_train, split_idx)
-            split_y = np.vsplit(y_train, split_idx)
-            while not future_res.ready():
-                for x, y in zip(split_x, split_y):
-                    yield x, y
-            del split_x, split_y
-            del x_train, y_train
-            gc.collect()
-            (x_train, img_ids) = future_res.get()
-            y_train = img_id_to_labels(img_ids, num_labels, biz_info)
-            gc.collect()
+    def read_with_labels(img_list, prog_bar):
+        x = read_images(img_size, img_list, prog_bar)
+        y = np.ones((len(img_list), num_labels))
+        for i, img in enumerate(img_list):
+            y[i] = photo_dict[img][1]
+        return x, y
 
-    return (x_train, y_train, x_test, y_test)
+    photo_list = list(photo_dict.keys())
+    np.random.shuffle(photo_list)
 
-def img_id_to_labels(img_ids, num_labels, biz_info):
-    n = img_ids.shape[0]
-    y = np.ones((n, num_labels))
-    for idx in range(n):
-        y[idx] = biz_info[img_ids[idx][0]][0]
-    return y
+    x_test, y_test = read_with_labels(photo_list[:test_size], True)
+    yield x_test, y_test
+
+    train_list = photo_list[test_size:]
+
+    while True:
+        batch = np.random.choice(train_list, size=(batch_size), replace=False)
+        yield read_with_labels(batch, False)
+        gc.collect()
+
