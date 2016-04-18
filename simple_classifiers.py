@@ -7,28 +7,24 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import LinearSVC
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.linear_model import LogisticRegressionCV
+from sklearn import cross_validation
 import json
 import score
 import read_data
+import math
 
 def main():
     x_train, y_train, x_test, y_test = load_features()
     x_train_conc = concate_x(x_train)
     x_test_conc = concate_x(x_test)
 
-    log_reg = LogisticRegressionCV(verbose=1, penalty='l2', n_jobs=1)
-    rand_for = RandomForestClassifier(
-        n_estimators=300,
-        max_features='auto',
-        max_depth=None,
-        n_jobs=-1,
-        verbose=1,
-        criterion="entropy")
-    linear_svc = LinearSVC(verbose=1)
-    
-    y_hat = one_vs_rest(x_train_conc, y_train, x_test_conc, log_reg)
+    # log_reg = LogisticRegressionCV(verbose=1, penalty='l2', n_jobs=1)
+    # linear_svc = linear_svc_cv(x_train_conc, y_train)
+    rand_for = random_forest_cv(x_train_conc, y_train)
 
-    # y_hat = one_vs_rest(x_train_conc, y_train, x_test_conc, rand_for)
+    # y_hat = one_vs_rest(x_train_conc, y_train, x_test_conc, log_reg)
+
+    y_hat = one_vs_rest(x_train_conc, y_train, x_test_conc, rand_for)
     # y_hat = one_vs_rest(x_train_conc, y_train, x_test_conc, linear_svc)
     # y_hat = one_for_each_class(x_train_conc, y_train, x_test_conc, rand_for)
     # y_hat = one_for_each_class(x_train_conc, y_train, x_test_conc, linear_svc)
@@ -42,6 +38,60 @@ def main():
     score_byclass = score.f1_by_class(y_hat, y_test)
     for c, class_score in enumerate(score_byclass):
         print(c, ':', class_score)
+
+def linear_svc_cv(x_train, y_train):
+    '''Returns a Linear SVC with the regularization parameter (C)
+    selected by cross validation'''
+    lambdas = [math.pow(2, x) for x in range(-4, 6)]
+    cv_scores = []
+    for lam in lambdas:
+        print('lambda: ', lam)
+        linear_svc = OneVsRestClassifier(LinearSVC(verbose=0, C=lam))
+        scores = cross_validation.cross_val_score(
+            linear_svc, x_train, y_train,
+            cv=3, scoring='average_precision')
+        print(scores.mean())
+        cv_scores.append(scores.mean())
+
+    print(cv_scores)
+
+    arg_max = np.argmax(cv_scores)
+    final_lambda = lambdas[arg_max]
+    return LinearSVC(verbose=1, C=final_lambda)
+
+def random_forest_cv(x_train, y_train):
+    '''Returns a Random Forest Classifier with n_estimators
+    selected by cross validation'''
+    n_trees = [200 + 45*x for x in range(0, 6)]
+    cv_scores = []
+    for n_tree in n_trees:
+        print('n_trees: ', n_tree)
+        rand_for = OneVsRestClassifier(
+            RandomForestClassifier(
+                n_estimators=n_tree,
+                max_features='auto',
+                max_depth=None,
+                n_jobs=-1,
+                verbose=0,
+                criterion="entropy"))
+        scores = cross_validation.cross_val_score(
+            rand_for, x_train, y_train,
+            cv=3,
+            scoring='average_precision')
+        print(scores.mean())
+        cv_scores.append(scores.mean())
+
+    print(cv_scores)
+
+    arg_max = np.argmax(cv_scores)
+    final_n_trees = n_trees[arg_max]
+    return RandomForestClassifier(
+        n_estimators=final_n_trees,
+        max_features='auto',
+        max_depth=None,
+        n_jobs=-1,
+        verbose=1,
+        criterion="entropy")
 
 def load_features():
     # this is just copy pasted from net2.py
